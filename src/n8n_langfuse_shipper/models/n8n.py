@@ -92,7 +92,7 @@ class N8nExecutionRecord(BaseModel):
     workflowId: str
     status: str
     startedAt: datetime
-    stoppedAt: datetime
+    stoppedAt: Optional[datetime] = None
     workflowData: WorkflowData
     data: ExecutionData
 

@@ -1,0 +1,244 @@
+# Langfuse v3 — Coolify-ready docker-compose
+#
+# Deploy as a "Docker Compose" service in Coolify.
+# All secrets are auto-generated via Coolify magic variables (SERVICE_PASSWORD_*, etc.).
+# SERVICE_URL_*_<PORT> tells Coolify which port to reverse-proxy.
+#
+# Service names are prefixed with "langfuse-" to avoid DNS collisions
+# with Coolify's own containers (coolify-db, coolify-redis, etc.) on
+# the shared coolify network.
+#
+# Based on: https://github.com/langfuse/langfuse/blob/main/docker-compose.yml
+
+services:
+  # ── Langfuse Web (public-facing) ────────────────────────────────────
+  langfuse-web:
+    image: langfuse/langfuse:3
+    restart: always
+    depends_on: &langfuse-depends-on
+      langfuse-db:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+    environment:
+      # — Coolify proxy binding (port suffix = reverse-proxy target) —
+      SERVICE_URL_LANGFUSE_3000: ${SERVICE_URL_LANGFUSE_3000}
+
+      # — Core / Auth —
+      NEXTAUTH_URL: ${SERVICE_URL_LANGFUSE_3000}
+      NEXTAUTH_SECRET: ${SERVICE_BASE64_NEXTAUTHSECRET}
+      SALT: ${SERVICE_PASSWORD_SALT}
+      ENCRYPTION_KEY: ${SERVICE_PASSWORD_64_LANGFUSE}
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+      HOSTNAME: ${HOSTNAME:-0.0.0.0}
+      AUTH_DISABLE_SIGNUP: ${AUTH_DISABLE_SIGNUP:-true}
+
+      # — Postgres —
+      DATABASE_URL: postgresql://${SERVICE_USER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@langfuse-db:5432/${POSTGRES_DB:-langfuse}
+
+      # — ClickHouse —
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: ${SERVICE_USER_CLICKHOUSE}
+      CLICKHOUSE_PASSWORD: ${SERVICE_PASSWORD_CLICKHOUSE}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+
+      # — S3 / MinIO (event ingestion — internal) —
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_EVENT_UPLOAD_REGION:-auto}
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${SERVICE_USER_MINIO}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_MINIO}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: ${LANGFUSE_S3_EVENT_UPLOAD_PREFIX:-events/}
+
+      # — S3 / MinIO (media — browser-reachable) —
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: ${LANGFUSE_S3_MEDIA_UPLOAD_BUCKET:-langfuse}
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: ${LANGFUSE_S3_MEDIA_UPLOAD_REGION:-auto}
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${SERVICE_USER_MINIO}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_MINIO}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${SERVICE_URL_MINIO_9000}
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: ${LANGFUSE_S3_MEDIA_UPLOAD_PREFIX:-media/}
+
+      # — S3 / MinIO (batch export) —
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: ${LANGFUSE_S3_BATCH_EXPORT_ENABLED:-false}
+      LANGFUSE_S3_BATCH_EXPORT_BUCKET: ${LANGFUSE_S3_BATCH_EXPORT_BUCKET:-langfuse}
+      LANGFUSE_S3_BATCH_EXPORT_PREFIX: ${LANGFUSE_S3_BATCH_EXPORT_PREFIX:-exports/}
+      LANGFUSE_S3_BATCH_EXPORT_REGION: ${LANGFUSE_S3_BATCH_EXPORT_REGION:-auto}
+      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: ${SERVICE_URL_MINIO_9000}
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: ${SERVICE_USER_MINIO}
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_MINIO}
+      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
+
+      # — Redis —
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ${SERVICE_PASSWORD_REDIS}
+
+      # — Tuning —
+      LANGFUSE_INGESTION_QUEUE_DELAY_MS: ${LANGFUSE_INGESTION_QUEUE_DELAY_MS:-1}
+      LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS: ${LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS:-1000}
+
+      # — Email (optional, configure in Coolify UI) —
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      SMTP_CONNECTION_URL: ${SMTP_CONNECTION_URL:-}
+
+      # — Init seeds (configure in Coolify UI) —
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-fazer-ai}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-fazer.ai}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-fazer-ai}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-fazer.ai}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-admin@fazer.ai}
+      LANGFUSE_INIT_USER_NAME: ${SERVICE_USER_LANGFUSE}
+      LANGFUSE_INIT_USER_PASSWORD: ${SERVICE_PASSWORD_LANGFUSE}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/public/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  # ── Langfuse Worker ─────────────────────────────────────────────────
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    restart: always
+    depends_on: *langfuse-depends-on
+    environment:
+      NEXTAUTH_URL: ${SERVICE_URL_LANGFUSE_3000}
+      NEXTAUTH_SECRET: ${SERVICE_BASE64_NEXTAUTHSECRET}
+      SALT: ${SERVICE_PASSWORD_SALT}
+      ENCRYPTION_KEY: ${SERVICE_PASSWORD_64_LANGFUSE}
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+      HOSTNAME: ${HOSTNAME:-0.0.0.0}
+
+      DATABASE_URL: postgresql://${SERVICE_USER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@langfuse-db:5432/${POSTGRES_DB:-langfuse}
+
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: ${SERVICE_USER_CLICKHOUSE}
+      CLICKHOUSE_PASSWORD: ${SERVICE_PASSWORD_CLICKHOUSE}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_EVENT_UPLOAD_REGION:-auto}
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${SERVICE_USER_MINIO}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_MINIO}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: ${LANGFUSE_S3_EVENT_UPLOAD_PREFIX:-events/}
+
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: ${LANGFUSE_S3_MEDIA_UPLOAD_BUCKET:-langfuse}
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: ${LANGFUSE_S3_MEDIA_UPLOAD_REGION:-auto}
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${SERVICE_USER_MINIO}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_MINIO}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${SERVICE_URL_MINIO_9000}
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: ${LANGFUSE_S3_MEDIA_UPLOAD_PREFIX:-media/}
+
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: ${LANGFUSE_S3_BATCH_EXPORT_ENABLED:-false}
+      LANGFUSE_S3_BATCH_EXPORT_BUCKET: ${LANGFUSE_S3_BATCH_EXPORT_BUCKET:-langfuse}
+      LANGFUSE_S3_BATCH_EXPORT_PREFIX: ${LANGFUSE_S3_BATCH_EXPORT_PREFIX:-exports/}
+      LANGFUSE_S3_BATCH_EXPORT_REGION: ${LANGFUSE_S3_BATCH_EXPORT_REGION:-auto}
+      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: ${SERVICE_URL_MINIO_9000}
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: ${SERVICE_USER_MINIO}
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_MINIO}
+      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
+
+      LANGFUSE_INGESTION_QUEUE_DELAY_MS: ${LANGFUSE_INGESTION_QUEUE_DELAY_MS:-1}
+      LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS: ${LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS:-1000}
+
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ${SERVICE_PASSWORD_REDIS}
+
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      SMTP_CONNECTION_URL: ${SMTP_CONNECTION_URL:-}
+
+  # ── ClickHouse ──────────────────────────────────────────────────────
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    restart: always
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-default}
+      CLICKHOUSE_USER: ${SERVICE_USER_CLICKHOUSE}
+      CLICKHOUSE_PASSWORD: ${SERVICE_PASSWORD_CLICKHOUSE}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  # ── MinIO (S3-compatible object store) ──────────────────────────────
+  langfuse-minio:
+    image: cgr.dev/chainguard/minio
+    restart: always
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${SERVICE_USER_MINIO}
+      MINIO_ROOT_PASSWORD: ${SERVICE_PASSWORD_MINIO}
+      SERVICE_URL_MINIO_9000: ${SERVICE_URL_MINIO_9000}
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+
+  # ── Redis ───────────────────────────────────────────────────────────
+  langfuse-redis:
+    image: redis:7
+    restart: always
+    command:
+      - sh
+      - -c
+      - redis-server --requirepass "$SERVICE_PASSWORD_REDIS"
+    environment:
+      SERVICE_PASSWORD_REDIS: ${SERVICE_PASSWORD_REDIS}
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$SERVICE_PASSWORD_REDIS", "PING"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────
+  langfuse-db:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-langfuse}
+      POSTGRES_USER: ${SERVICE_USER_POSTGRES}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U $POSTGRES_USER -d $POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  langfuse_postgres_data:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_minio_data:
+  langfuse_redis_data:
