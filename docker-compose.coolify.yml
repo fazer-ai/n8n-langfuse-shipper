@@ -1,0 +1,57 @@
+services:
+  shipper:
+    image: ghcr.io/fazer-ai/n8n-langfuse-shipper:latest
+    environment:
+      # --- Postgres (n8n database) ---
+      PG_DSN: ${PG_DSN:-}
+      DB_POSTGRESDB_HOST: ${DB_POSTGRESDB_HOST:-}
+      DB_POSTGRESDB_PORT: ${DB_POSTGRESDB_PORT:-5432}
+      DB_POSTGRESDB_DATABASE: ${DB_POSTGRESDB_DATABASE:-}
+      DB_POSTGRESDB_USER: ${DB_POSTGRESDB_USER:-postgres}
+      DB_POSTGRESDB_PASSWORD: ${SERVICE_PASSWORD_SHIPPER}
+      DB_POSTGRESDB_SCHEMA: ${DB_POSTGRESDB_SCHEMA:-public}
+      DB_TABLE_PREFIX: ${DB_TABLE_PREFIX:-n8n_}
+
+      # --- Langfuse ---
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+
+      # --- Filtering ---
+      REQUIRE_EXECUTION_METADATA: ${REQUIRE_EXECUTION_METADATA:-false}
+      FILTER_AI_ONLY: ${FILTER_AI_ONLY:-false}
+      FILTER_AI_MODE: ${FILTER_AI_MODE:-contextual}
+      FILTER_WORKFLOW_IDS: ${FILTER_WORKFLOW_IDS:-}
+      LANGFUSE_TRACE_ID_FIELD_NAME: ${LANGFUSE_TRACE_ID_FIELD_NAME:-}
+
+      # --- Media / Binary upload ---
+      ENABLE_MEDIA_UPLOAD: ${ENABLE_MEDIA_UPLOAD:-false}
+      MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-25000000}
+      EXTENDED_MEDIA_SCAN_MAX_ASSETS: ${EXTENDED_MEDIA_SCAN_MAX_ASSETS:-250}
+
+      # --- Root span I/O surfacing ---
+      ROOT_SPAN_INPUT_NODE: ${ROOT_SPAN_INPUT_NODE:-}
+      ROOT_SPAN_OUTPUT_NODE: ${ROOT_SPAN_OUTPUT_NODE:-}
+
+      # --- Tuning ---
+      FETCH_BATCH_SIZE: ${FETCH_BATCH_SIZE:-100}
+      TRUNCATE_FIELD_LEN: ${TRUNCATE_FIELD_LEN:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      FLUSH_EVERY_N_TRACES: ${FLUSH_EVERY_N_TRACES:-1}
+      OTEL_MAX_QUEUE_SIZE: ${OTEL_MAX_QUEUE_SIZE:-10000}
+      OTEL_MAX_EXPORT_BATCH_SIZE: ${OTEL_MAX_EXPORT_BATCH_SIZE:-512}
+      OTEL_SCHEDULED_DELAY_MILLIS: ${OTEL_SCHEDULED_DELAY_MILLIS:-200}
+      EXPORT_QUEUE_SOFT_LIMIT: ${EXPORT_QUEUE_SOFT_LIMIT:-5000}
+      EXPORT_SLEEP_MS: ${EXPORT_SLEEP_MS:-75}
+
+      # --- Checkpoint ---
+      CHECKPOINT_FILE: /data/.shipper_checkpoint
+    volumes:
+      - shipper-checkpoint:/data
+    command: ["--limit", "200", "--no-dry-run"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import importlib,sys; importlib.import_module('n8n_langfuse_shipper.mapper'); sys.exit(0)"]
+      interval: 1m
+      timeout: 10s
+      start_period: 30s
